@@ -13,7 +13,7 @@ type Task struct {
 	fileName string
 	nReduce int
 	nMaps int
-	Seq int
+	seq int
 	phase int
 	alive bool
 }
@@ -31,4 +31,8 @@ func max(value1 int, value2 int) int {
 	} else {
 		return value2
 	}
+}
+
+func reduceName(mapIdx, reduceIdx int) string {
+	return fmt.Sprintf("mr-%d-%d", mapIdx, reduceIdx)
 }

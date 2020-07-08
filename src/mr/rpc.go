@@ -30,12 +30,23 @@ type RegisterResponse struct {
 	WorkerId int
 }
 
-type TaskRequest struct {
+type AskTaskRequest struct {
 	WorkerId int
 }
 
-type TaskResponse struct {
-	Task *Task
+type AskTaskResponse struct {
+	task *Task
+}
+
+type ReportTaskRequest struct {
+	workerId int
+	phase int
+	seq int
+	isDone bool
+}
+
+type ReportTaskResponse struct {
+
 }
 
 // Cook up a unique-ish UNIX-domain socket name

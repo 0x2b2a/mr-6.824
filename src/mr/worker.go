@@ -1,7 +1,9 @@
 package mr
 
 import (
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"sync"
 )
@@ -39,8 +41,8 @@ func (w *_Worker) register()  {
 }
 
 func (w *_Worker) askTask() Task {
-	request := TaskRequest{}
-	response := TaskResponse{}
+	request := AskTaskRequest{}
+	response := AskTaskResponse{}
 	request.WorkerId = w.id
 
 	success := call("Master.AskTask", &request, &response)
@@ -50,8 +52,8 @@ func (w *_Worker) askTask() Task {
 		os.Exit(1)
 	}
 
-	info("-----worker{%d} get task{%+v}-----", w.id, response.Task)
-	return *response.Task
+	info("-----worker{%d} get task{%+v}-----", w.id, response.task)
+	return *response.task
 }
 
 func (w *_Worker) run() {
@@ -61,6 +63,8 @@ func (w *_Worker) run() {
 			info("-----worker's task not alive-----")
 			break
 		}
+
+		w.doTask(t)
 	}
 }
 
@@ -77,9 +81,65 @@ func (w *_Worker) doTask(t Task)  {
 	}
 }
 
-//todo
-func (w *_Worker) doMapTask(t Task) {
+func (w *_Worker) reportTask(t Task, isDone bool, err error)  {
+	if err != nil {
+		log.Printf("%v", err)
+	}
 
+	request := ReportTaskRequest{}
+	request.isDone = isDone
+	request.seq = t.seq
+	request.phase = t.phase
+	request.workerId = w.id
+
+	response := ReportTaskResponse{}
+
+	success := call("Master.ReportTask", &request, &response)
+
+	if ! success {
+		info("-----worker{%id} report work failed : %+v", request)
+	}
+}
+
+func (w *_Worker) doMapTask(t Task) {
+	contents, err := ioutil.ReadFile(t.fileName)
+
+	if err != nil {
+		return
+	}
+
+	kvs := w.mapf(t.fileName, string(contents))
+	reduces := make([][]KeyValue, t.nReduce)
+	for _, kv := range kvs {
+		idx := ihash(kv.Key) % t.nReduce
+		reduces[idx] = append(reduces[idx], kv)
+	}
+
+	for idx, reduce := range reduces {
+		fileName := reduceName(t.seq, idx)
+		f, err := os.Create(fileName)
+
+		if err != nil {
+			w.reportTask(t, false, err)
+			return
+		}
+
+		enc := json.NewEncoder(f)
+
+		for _, kv := range reduce {
+			err := enc.Encode(&kv)
+
+			if err != nil {
+				w.reportTask(t, false, err)
+			}
+		}
+
+		if err := f.Close(); err != nil {
+			w.reportTask(t, false, err)
+		}
+	}
+
+	w.reportTask(t, true, nil)
 }
 
 //todo

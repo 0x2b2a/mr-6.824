@@ -15,6 +15,14 @@ const (
 	ScheduleInterval = time.Millisecond * 500
 )
 
+const (
+	TaskStatusReady   = 100
+	TaskStatusQueue   = 101
+	TaskStatusRunning = 102
+	TaskStatusFinish  = 103
+	TaskStatusErr     = 104
+)
+
 type Master struct {
 	// Your definitions here.
 	mu sync.Mutex
@@ -22,7 +30,7 @@ type Master struct {
 	isDone bool
 	nReduce int
 	files []string
-	taskChan chan _Task
+	taskChan chan Task
 	phase int
 }
 
@@ -33,6 +41,17 @@ type _Task struct {
 }
 
 // Your code here -- RPC handlers for the worker to call.
+func (m *Master) AskTask(args *AskTaskRequest, response *AskTaskResponse) error {
+	task := <-m.taskChan
+	response.task = &task
+
+	if task.alive {
+		m.regTask()
+	}
+
+	return nil
+}
+
 func (m *Master) schedule() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -110,7 +129,7 @@ func MakeMaster(files []string, nReduce int) *Master {
 	m.files = files
 
 	bufferSize := max(nReduce, len(m.files))
-	m.taskChan = make(chan _Task, bufferSize)
+	m.taskChan = make(chan Task, bufferSize)
 
 	m.initMapTask()
 	go m.tickSchedule()
@@ -134,4 +153,17 @@ func (m *Master) initReduceTask() {
 
 	m.phase = MapPhase
 	m.tasks = make([]_Task, m.nReduce)
+}
+
+func (m *Master) regTask(request *AskTaskRequest, task *Task) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if task.phase != m.phase {
+		panic("ask a wrong phase task")
+	}
+
+	m.tasks[task.seq].status = TaskStatusRunning
+	m.tasks[task.seq].workerId = request.WorkerId
+	m.tasks[task.seq].startTime = time.Now()
 }
